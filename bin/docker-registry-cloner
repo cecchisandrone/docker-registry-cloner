@@ -12,8 +12,8 @@ function list(val) {
 
 program
     .version('1.0.0')
-    .option('-s, --source <required>', 'Source registry url (e.g. https://registry.org)')
-    .option('-t, --target <required>', 'Target registry url (e.g. https://registry.org)')
+    .option('-s, --source <required>', 'Source registry url (e.g. registry.org)')
+    .option('-t, --target <required>', 'Target registry url (e.g. registry.org)')
     .option('-a, --source-credentials <items>', 'Credentials for source registry (e.g. username,password)', list)
     .option('-b, --target-credentials <items>', 'Credentials for target registry (e.g. username,password)', list)
     .option('-i, --images <items>', 'Filter on image names (e.g. image1,image2)', list)
@@ -43,18 +43,18 @@ if (program.targetCredentials) {
 
 // Login into Docker registries
 if (program.sourceCredentials) {
-    exec('docker login -u ' + program.sourceCredentials[0] + ' -p ' + program.sourceCredentials[1] + ' ' + program.source, {stdio : [0,1,2]});
+    exec('docker login -u ' + program.sourceCredentials[0] + ' -p ' + program.sourceCredentials[1] + ' ' + program.source, { stdio: [0, 1, 2] });
 } else {
-    exec('docker login ' + program.source, {stdio : [0,1,2]});
+    exec('docker login ' + program.source, { stdio: [0, 1, 2] });
 }
 if (program.targetCredentials) {
-    exec('docker login -u ' + program.targetCredentials[0] + ' -p ' + program.targetCredentials[1] + ' ' + program.target, {stdio : [0,1,2]});
+    exec('docker login -u ' + program.targetCredentials[0] + ' -p ' + program.targetCredentials[1] + ' ' + program.target, { stdio: [0, 1, 2] });
 } else {
-    exec('docker login ' + program.target, {stdio : [0,1,2]});
+    exec('docker login ' + program.target, { stdio: [0, 1, 2] });
 }
 
 var images = [];
-client.get(program.source + "/v2/_catalog/", function (data, response) {
+client.get("https://" + program.source + "/v2/_catalog", function (data, response) {
     images = data.repositories;
 
     // Filter with given images
@@ -66,4 +66,30 @@ client.get(program.source + "/v2/_catalog/", function (data, response) {
 
     console.log("Cloning the following images: " + images);
 
+    for (var i = 0; i < images.length; i++) {
+
+        var image = images[i];
+        client.get("https://" + program.source + "/v2/" + image + "/tags/list", function (data, response) {
+            console.log(data);
+            var tags = data.tags;
+
+            for (var j = 0; j < tags.length; j++) {
+
+                var tag = tags[j];
+
+                // Pull image
+                var sourceImage = program.source + "/" + image + ":" + tag;
+                exec('docker pull ' + sourceImage, { stdio: [0, 1, 2] });
+
+                // Push to target registry
+                var targetImage = program.target + "/" + image + ":" + tag;
+                exec('docker tag ' + sourceImage + " " + targetImage, { stdio: [0, 1, 2] });
+                exec('docker push ' + targetImage, { stdio: [0, 1, 2] });
+
+                // Remove images
+                exec('docker rmi -f ' + sourceImage, { stdio: [0, 1, 2] });
+                exec('docker rmi -f ' + targetImage, { stdio: [0, 1, 2] });
+            }
+        });
+    }
 });
