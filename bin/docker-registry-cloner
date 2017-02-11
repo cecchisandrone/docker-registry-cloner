@@ -17,8 +17,9 @@ program
     .option('-t, --target <required>', 'Target registry url (e.g. registry.org)')
     .option('-a, --source-credentials <items>', 'Credentials for source registry (e.g. username,password)', list)
     .option('-b, --target-credentials <items>', 'Credentials for target registry (e.g. username,password)', list)
-    .option('-i, --images <items>', 'Filter on image names (e.g. image1,image2)', list)
-    .parse(process.argv); // end with parse to parse through the input
+    .option('-i, --include-images <items>', 'Include image names (e.g. image1,image2)', list)
+    .option('-e, --exclude-images <items>', 'Exclude image names (e.g. image1,image2)', list)
+    .parse(process.argv);
 
 if (program.source) {
     console.log("Source registry: %s", program.source);
@@ -61,9 +62,14 @@ var res = request('GET', "https://" + program.source + "/v2/_catalog", clientOpt
 images = JSON.parse(res.getBody('utf8')).repositories;
 
 // Filter with given images
-if (program.images) {
+if (program.includeImages) {
     images = images.filter(function (el) {
-        return program.images.indexOf(el) != -1;
+        return program.includeImages.indexOf(el) != -1;
+    });
+}
+if (program.excludeImages) {
+    images = images.filter(function (el) {
+        return program.excludeImages.indexOf(el) == -1;
     });
 }
 
