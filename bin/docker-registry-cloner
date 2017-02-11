@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 const program = require('commander');
 const exec = require('child_process').execSync;
-const Client = require('node-rest-client').Client;
+var request = require('sync-request');
+var clientOptions = {};
 
 // Allow self signed certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -31,10 +32,11 @@ if (program.target) {
 var client = null;
 if (program.sourceCredentials) {
     console.log("Source credentials: %s", program.sourceCredentials);
-    var auth = { user: program.sourceCredentials[0], password: program.sourceCredentials[1] };
-    client = new Client(auth);
-} else {
-    client = new Client();
+    clientOptions = {
+        headers: {
+            authorization: 'Basic ' + new Buffer(program.sourceCredentials[0] + ':' + program.sourceCredentials[1], 'ascii').toString('base64')
+        }
+    };
 }
 
 if (program.targetCredentials) {
@@ -54,42 +56,40 @@ if (program.targetCredentials) {
 }
 
 var images = [];
-client.get("https://" + program.source + "/v2/_catalog", function (data, response) {
-    images = data.repositories;
+var res = request('GET', "https://" + program.source + "/v2/_catalog", clientOptions);
 
-    // Filter with given images
-    if (program.images) {
-        images = images.filter(function (el) {
-            return program.images.indexOf(el) != -1;
-        });
+images = JSON.parse(res.getBody('utf8')).repositories;
+
+// Filter with given images
+if (program.images) {
+    images = images.filter(function (el) {
+        return program.images.indexOf(el) != -1;
+    });
+}
+
+console.log("Cloning the following images: " + images);
+
+for (var i = 0; i < images.length; i++) {
+
+    var image = images[i];
+    res = request('GET', "https://" + program.source + "/v2/" + image + "/tags/list", clientOptions);
+    var tags = JSON.parse(res.getBody('utf8')).tags;
+
+    for (var j = 0; j < tags.length; j++) {
+
+        var tag = tags[j];
+
+        // Pull image
+        var sourceImage = program.source + "/" + image + ":" + tag;
+        exec('docker pull ' + sourceImage, { stdio: [0, 1, 2] });
+
+        // Push to target registry
+        var targetImage = program.target + "/" + image + ":" + tag;
+        exec('docker tag ' + sourceImage + " " + targetImage, { stdio: [0, 1, 2] });
+        exec('docker push ' + targetImage, { stdio: [0, 1, 2] });
+
+        // Remove images
+        exec('docker rmi -f ' + sourceImage, { stdio: [0, 1, 2] });
+        exec('docker rmi -f ' + targetImage, { stdio: [0, 1, 2] });
     }
-
-    console.log("Cloning the following images: " + images);
-
-    for (var i = 0; i < images.length; i++) {
-
-        var image = images[i];
-        client.get("https://" + program.source + "/v2/" + image + "/tags/list", function (data, response) {
-            console.log(data);
-            var tags = data.tags;
-
-            for (var j = 0; j < tags.length; j++) {
-
-                var tag = tags[j];
-
-                // Pull image
-                var sourceImage = program.source + "/" + image + ":" + tag;
-                exec('docker pull ' + sourceImage, { stdio: [0, 1, 2] });
-
-                // Push to target registry
-                var targetImage = program.target + "/" + image + ":" + tag;
-                exec('docker tag ' + sourceImage + " " + targetImage, { stdio: [0, 1, 2] });
-                exec('docker push ' + targetImage, { stdio: [0, 1, 2] });
-
-                // Remove images
-                exec('docker rmi -f ' + sourceImage, { stdio: [0, 1, 2] });
-                exec('docker rmi -f ' + targetImage, { stdio: [0, 1, 2] });
-            }
-        });
-    }
-});
+}
