@@ -1,0 +1,69 @@
+#!/usr/bin/env node
+const program = require('commander');
+const exec = require('child_process').execSync;
+const Client = require('node-rest-client').Client;
+
+// Allow self signed certificates
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
+function list(val) {
+    return val.split(',');
+}
+
+program
+    .version('1.0.0')
+    .option('-s, --source <required>', 'Source registry url (e.g. https://registry.org)')
+    .option('-t, --target <required>', 'Target registry url (e.g. https://registry.org)')
+    .option('-a, --source-credentials <items>', 'Credentials for source registry (e.g. username,password)', list)
+    .option('-b, --target-credentials <items>', 'Credentials for target registry (e.g. username,password)', list)
+    .option('-i, --images <items>', 'Filter on image names (e.g. image1,image2)', list)
+    .parse(process.argv); // end with parse to parse through the input
+
+if (program.source) {
+    console.log("Source registry: %s", program.source);
+}
+
+if (program.target) {
+    console.log("Target registry: %s", program.target);
+}
+
+// REST client
+var client = null;
+if (program.sourceCredentials) {
+    console.log("Source credentials: %s", program.sourceCredentials);
+    var auth = { user: program.sourceCredentials[0], password: program.sourceCredentials[1] };
+    client = new Client(auth);
+} else {
+    client = new Client();
+}
+
+if (program.targetCredentials) {
+    console.log("Target credentials: %s", program.targetCredentials);
+}
+
+// Login into Docker registries
+if (program.sourceCredentials) {
+    exec('docker login -u ' + program.sourceCredentials[0] + ' -p ' + program.sourceCredentials[1] + ' ' + program.source, {stdio : [0,1,2]});
+} else {
+    exec('docker login ' + program.source, {stdio : [0,1,2]});
+}
+if (program.targetCredentials) {
+    exec('docker login -u ' + program.targetCredentials[0] + ' -p ' + program.targetCredentials[1] + ' ' + program.target, {stdio : [0,1,2]});
+} else {
+    exec('docker login ' + program.target, {stdio : [0,1,2]});
+}
+
+var images = [];
+client.get(program.source + "/v2/_catalog/", function (data, response) {
+    images = data.repositories;
+
+    // Filter with given images
+    if (program.images) {
+        images = images.filter(function (el) {
+            return program.images.indexOf(el) != -1;
+        });
+    }
+
+    console.log("Cloning the following images: " + images);
+
+});
